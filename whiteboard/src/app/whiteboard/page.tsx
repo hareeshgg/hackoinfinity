@@ -56,10 +56,10 @@ export default function App() {
   };
 
   return (
-    <main className="w-screen h-screen bg-Surface relative">
+    <main className="w-screen h-screen bg-Surface relative overflow-hidden">
       {/* Show Create/Join buttons only if not inside a room */}
       {!room && (
-        <div className="absolute top-4 right-4 z-50">
+        <div className="fixed top-[-12] right-6 z-99">
           <RoomButtons />
         </div>
       )}

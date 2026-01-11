@@ -462,10 +462,7 @@ const WhiteBoard = ({
         setZoomLevel={setZoomLevel}
         stageRef={stageRef}
       />
-      <div className="fixed top-[20px] right-[10px] p-3 rounded-lg border border-gray-200 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 transition-all cursor-pointer text-white shadow-lg flex items-center gap-2" onClick={handleCreateRoom}>
-        <button>Create a Room</button>
-        <IconCircleDashedPlus />
-      </div>
+      
 
       {showAuthModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

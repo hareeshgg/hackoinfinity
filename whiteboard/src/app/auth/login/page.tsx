@@ -117,7 +117,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className={`w-full flex justify-center items-center gap-2 py-3 px-4 border-3 border-[var(--accent)] rounded-2xl text-sm font-bold text-[var(--primary-text)] bg-[var(--accent)] hover:bg-[var(--surface)] hover:border-[var(--primary-text)] focus:outline-none focus:ring-4 focus:ring-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 ${dmsans.className}`}
+                className={`cursor-pointer w-full flex justify-center items-center gap-2 py-3 px-4 border-3 border-[var(--accent)] rounded-2xl text-sm font-bold text-[var(--primary-text)] bg-[var(--accent)] hover:bg-[var(--surface)] hover:border-[var(--primary-text)] focus:outline-none focus:ring-4 focus:ring-[var(--accent)] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105 ${dmsans.className}`}
               >
                 {loading ? (
                   <>
