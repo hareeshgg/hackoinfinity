@@ -6,6 +6,8 @@ import TriangleShape from "./_shapes/triangle";
 import StarShape from "./_shapes/star";
 import { useShapeStore } from "./_store/shapeStore";
 import { useWhiteBoardStore } from "./_store/whiteboardStore";
+import { useRoomStore } from "./_store/roomStore";
+import { useSocketStore } from "./_store/socketStore";
 
 type ShapesLayerProps = {
   objects: CanvasObjectType[];
@@ -28,8 +30,9 @@ export default function ShapeLayer({
   const { setBorderColor, setBorderWidth, setFillColor } = useShapeStore(
     (s) => s
   );
+  const { roomCode } = useRoomStore((s) => s);
   const { selectedTool } = useWhiteBoardStore((s) => s);
-
+  const { connect, socket } = useSocketStore();
   const shapes = [
     ...objects.filter((obj: CanvasObjectType) => obj.type === "shape"),
     ...(newObject && newObject.type === "shape" ? [newObject] : []),
@@ -63,8 +66,17 @@ export default function ShapeLayer({
           // e.target.getLayer().batchDraw(); // Redraw
         }
       },
-      onChange: (newAttrs: Partial<CanvasObjectType>) =>
-        onChange(shape.id, newAttrs),
+      onChange: async (newAttrs: Partial<CanvasObjectType>) => {
+        onChange(shape.id, newAttrs);
+        if (roomCode) {
+          const socket = await connect();
+          socket.emit("update-canvas-object", {
+            room: roomCode,
+            object: newAttrs,
+          });
+        } else {
+        }
+      },
     };
 
     switch (shape.shapeName) {

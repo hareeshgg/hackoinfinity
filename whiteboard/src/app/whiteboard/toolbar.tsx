@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   IconArrowsMove,
   IconPencil,
@@ -23,6 +23,9 @@ import {
   IconBold,
   IconItalic,
   IconUnderline,
+  IconFileExport,
+  IconDownload,
+  IconDeviceFloppy,
 } from "@tabler/icons-react";
 import { useWhiteBoardStore } from "./_store/whiteboardStore";
 import Konva from "konva";
@@ -30,9 +33,18 @@ import { useInkStore } from "./_store/inkStore";
 import { useEraserStore } from "./_store/eraserStore";
 import clsx from "clsx";
 import MyColorPicker from "./colorPicker";
+import MiniColorPicker from "./miniColorPicker";
 import { useShapeStore } from "./_store/shapeStore";
 import { presetColors } from "./_shapes/utils";
 import { useTextStore } from "./_store/textStore";
+import { Socket } from "socket.io-client";
+import { DefaultEventsMap } from "socket.io";
+import { useRoomStore } from "./_store/roomStore";
+import { useSession } from "next-auth/react";
+import { useSocketStore } from "./_store/socketStore";
+import { supabase } from "../lib/supabase";
+import { prisma } from "@/lib/prisma";
+import { useRouter } from "next/navigation";
 
 export default function ToolBar({
   boardRef,
@@ -49,50 +61,230 @@ export default function ToolBar({
     resetCanvas,
     canvasObjects,
   } = useWhiteBoardStore((s) => s);
+  const [toggleClearAllModal, setToggleClearAllModal] = useState(false);
+  const { roomCode } = useRoomStore((s) => s);
+  const { data: session } = useSession();
+  // Global state for all toolbar dropdowns
+  const [showPenProperties, setShowPenProperties] = useState(false);
+  const [showShapeProperties, setShowShapeProperties] = useState(false);
+  const [showEraserProperties, setShowEraserProperties] = useState(false);
+  const [showTextProperties, setShowTextProperties] = useState(false);
 
+  // Close all dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (
+        !target.closest(".toolbar-dropdown") &&
+        !target.closest(".toolbar-button")
+      ) {
+        setShowPenProperties(false);
+        setShowShapeProperties(false);
+        setShowEraserProperties(false);
+        setShowTextProperties(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const downloadURI = (uri: string, filename: string) => {
+    const a = document.createElement("a");
+    a.href = uri;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  function dataURLtoFile(dataUrl: string, fileName: string) {
+    const arr = dataUrl.split(",");
+    const mime = arr[0].match(/:(.*?);/)?.[1] || "image/png";
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], fileName, { type: mime });
+  }
+
+  const handleFileDownload = () => {
+    console.log("Downloading");
+    if (!boardRef.current) return;
+    const uri = boardRef.current.toDataURL({ pixelRatio: 2 });
+    downloadURI(uri, "whiteboard.png");
+  };
+
+  const handleFileSave = async () => {
+    if (!session || !session.user || !session.user.id) return;
+    if (!boardRef.current) return;
+
+    const userId = session.user.id;
+    const fileName = `${userId}-${roomCode}/${crypto.randomUUID()}.png`;
+    const uri = boardRef.current.toDataURL({ mimeType: "image/png" });
+
+    const file = dataURLtoFile(uri, fileName);
+
+    const { data, error } = await supabase.storage
+      .from("whiteboard")
+      .upload(fileName, file, {
+        contentType: "image/png",
+        upsert: true,
+      });
+
+    if (error) throw error;
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from("whiteboard")
+      .getPublicUrl(fileName);
+
+    await fetch("/api/posts/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        img: publicUrlData.publicUrl, // or fileName if you prefer
+        title: crypto.randomUUID(),
+        authorId: userId,
+      }),
+    });
+    router.push("/leaderboard")
+  };
+
+  const closeAllDropdowns = () => {
+    setShowPenProperties(false);
+    setShowShapeProperties(false);
+    setShowEraserProperties(false);
+    setShowTextProperties(false);
+  };
+  const router = useRouter();
+  const { socket, connect } = useSocketStore();
   return (
-    <section className="fixed top-[20px] left-1/2 -translate-x-1/2 flex items-center gap-4 bg-white shadow-lg rounded-xl p-3 border border-gray-200">
-      <IconArrowsMove
-        className={clsx(
-          "cursor-pointer hover:text-blue-500",
-          selectedTool === "select" && "text-blue-500"
-        )}
-        onClick={() => setSelectedTool("select")}
-      />
+    <>
+      <section className="fixed top-[20px] left-[20px] lg:left-1/2 lg:-translate-x-1/2 flex items-center gap-4 bg-white shadow-lg rounded-xl p-3 border border-gray-200">
+        <IconArrowsMove
+          className={clsx(
+            "cursor-pointer hover:text-blue-500 toolbar-button",
+            selectedTool === "select" && "text-blue-500"
+          )}
+          onClick={() => {
+            closeAllDropdowns();
+            setSelectedTool("select");
+          }}
+        />
 
-      <PenSelector />
+        <PenSelector
+          showColorPicker={showPenProperties}
+          setShowColorPicker={setShowPenProperties}
+          closeAllDropdowns={closeAllDropdowns}
+        />
 
-      <TextSelector />
+        <TextSelector
+          showTextPanel={showTextProperties}
+          setShowTextPanel={setShowTextProperties}
+          closeAllDropdowns={closeAllDropdowns}
+        />
 
-      <ShapeSelector />
+        <ShapeSelector
+          showShapes={showShapeProperties}
+          setShowShapes={setShowShapeProperties}
+          closeAllDropdowns={closeAllDropdowns}
+        />
 
-      <EraserSelector />
+        <EraserSelector
+          showEraser={showEraserProperties}
+          setShowEraser={setShowEraserProperties}
+          closeAllDropdowns={closeAllDropdowns}
+        />
 
-      <IconArrowBackUp
-        className={`cursor-pointer ${
-          undoStack.length === 0 ? "opacity-30" : "hover:text-blue-500"
-        }`}
-        onClick={undo}
-      />
-      <IconArrowForwardUp
-        className={`cursor-pointer ${
-          redoStack.length === 0 ? "opacity-30" : "hover:text-blue-500"
-        }`}
-        onClick={redo}
-      />
+        <IconArrowBackUp
+          className={`cursor-pointer ${
+            undoStack.length === 0 ? "opacity-30" : "hover:text-blue-500"
+          }`}
+          onClick={async () => {
+            undo();
+            if (roomCode) {
+              const socket = await connect();
+              socket.emit("undo", { roomCode });
+            }
+          }}
+        />
+        <IconArrowForwardUp
+          className={`cursor-pointer ${
+            redoStack.length === 0 ? "opacity-30" : "hover:text-blue-500"
+          }`}
+          onClick={async () => {
+            redo();
+            if (roomCode) {
+              const socket = await connect();
+              socket.emit("redo", { roomCode });
+            }
+          }}
+        />
 
-      <IconTrash
-        className={`cursor-pointer ${
-          canvasObjects.length === 0 ? "opacity-30" : "hover:text-red-500"
-        }`}
-        onClick={resetCanvas}
-      />
-    </section>
+        <IconTrash
+          className={`cursor-pointer ${
+            canvasObjects.length === 0 ? "opacity-30" : "hover:text-red-500"
+          }`}
+          onClick={() => setToggleClearAllModal(true)}
+        />
+
+        <IconFileExport
+          className="cursor-pointer hover:text-blue-500"
+          onClick={handleFileSave}
+        />
+
+        <IconDownload
+          className="cursor-pointer hover:text-blue-500"
+          onClick={handleFileDownload}
+        />
+      </section>
+      {toggleClearAllModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full mx-4 relative border-4 border-Accent">
+            <h2 className="text-xl pb-6">
+              Are you sure you want to clear the canvas
+            </h2>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setToggleClearAllModal(false)}
+                className="flex-1 cursor-pointer px-6 py-3 border-3 border-Accent text-Primary-Text rounded-2xl hover:bg-Surface transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  resetCanvas();
+                  if (roomCode) {
+                    const socket = await connect();
+                    socket.emit("reset-canvas", { roomCode });
+                  }
+                  setToggleClearAllModal(false);
+                }}
+                className="flex-1 cursor-pointer px-6 py-3 bg-Acborder-Accent text-Primary-Text rounded-2xl hover:bg-red-500 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-function ShapeSelector() {
-  const [showShapes, setShowShapes] = useState(false);
+function ShapeSelector({
+  showShapes,
+  setShowShapes,
+  closeAllDropdowns,
+}: {
+  showShapes: boolean;
+  setShowShapes: (show: boolean) => void;
+  closeAllDropdowns: () => void;
+}) {
   const {
     borderColor,
     borderWidth,
@@ -107,16 +299,19 @@ function ShapeSelector() {
     <div className="relative">
       <IconShape
         className={clsx(
-          "cursor-pointer hover:text-blue-500",
+          "cursor-pointer hover:text-blue-500 toolbar-button",
           selectedTool.includes("add") &&
             selectedTool !== "addText" &&
             "text-blue-500"
         )}
-        onClick={() => setShowShapes((prev) => !prev)}
+        onClick={() => {
+          closeAllDropdowns();
+          setShowShapes(!showShapes);
+        }}
       />
 
       {showShapes && (
-        <div className="absolute top-10 left-0 bg-white shadow-md rounded-lg p-3 flex flex-col justify-between gap-4 w-60">
+        <div className="toolbar-dropdown absolute top-10 left-0 bg-white shadow-xl rounded-xl border-2 border-orange-200 p-4 flex flex-col justify-between gap-4 w-60 z-50">
           <div className="flex justify-between">
             <IconRectangle
               className={clsx(
@@ -168,28 +363,18 @@ function ShapeSelector() {
             </IconStar>
           </div>
           <hr />
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between items-center gap-2">
-              <label className="text-sm text-gray-600">Fill color:</label>
-              <hr />
-              <input
-                type="text"
-                value={fillColor}
-                onChange={(e) => setFillColor(e.target.value)}
-                className="border rounded px-2 py-1 text-sm w-37"
-              />
-            </div>
+          <div className="flex flex-col gap-3">
+            <MiniColorPicker
+              value={fillColor}
+              onChange={setFillColor}
+              label="Fill color"
+            />
 
-            <div className="flex justify-between items-center gap-2">
-              <label className="text-sm text-gray-600">Border color:</label>
-              <hr />
-              <input
-                type="text"
-                value={borderColor}
-                onChange={(e) => setBorderColor(e.target.value)}
-                className="border rounded px-2 py-1 text-sm w-37"
-              />
-            </div>
+            <MiniColorPicker
+              value={borderColor}
+              onChange={setBorderColor}
+              label="Border color"
+            />
 
             <div className="flex items-center justify-between gap-2">
               <label className="text-sm text-gray-600">Border size:</label>
@@ -199,8 +384,9 @@ function ShapeSelector() {
                 max={10}
                 defaultValue={borderWidth}
                 onChange={(e) => setBorderWidth(parseInt(e.target.value))}
-                className="accent-blue-500 w-37"
+                className="accent-orange-500 w-32"
               />
+              <span className="text-xs text-gray-500 w-8">{borderWidth}px</span>
             </div>
           </div>
         </div>
@@ -209,9 +395,16 @@ function ShapeSelector() {
   );
 }
 
-function EraserSelector() {
+function EraserSelector({
+  showEraser,
+  setShowEraser,
+  closeAllDropdowns,
+}: {
+  showEraser: boolean;
+  setShowEraser: (show: boolean) => void;
+  closeAllDropdowns: () => void;
+}) {
   const { setSelectedTool, selectedTool } = useWhiteBoardStore((s) => s);
-  const [showEraser, setShowEraser] = useState(false);
   const { eraserSize, setEraserSize } = useEraserStore((s) => s);
 
   const handleEraserSizePlus = () => {
@@ -231,16 +424,17 @@ function EraserSelector() {
     <div className="relative">
       <IconEraser
         className={clsx(
-          "cursor-pointer hover:text-blue-500",
+          "cursor-pointer hover:text-blue-500 toolbar-button",
           selectedTool === "eraser" && "text-blue-500"
         )}
         onClick={() => {
-          setShowEraser((prev) => !prev);
+          closeAllDropdowns();
+          setShowEraser(!showEraser);
           setSelectedTool("eraser");
         }}
       />
       {showEraser && (
-        <div className="absolute top-10 left-0 bg-white shadow-md rounded-lg p-3 flex gap-3">
+        <div className="toolbar-dropdown absolute top-10 left-0 bg-white shadow-xl rounded-xl border-2 border-orange-200 p-4 flex gap-3 z-50">
           <IconMinus
             className="cursor-pointer"
             onClick={handleEraserSizeMinus}
@@ -262,19 +456,27 @@ function EraserSelector() {
   );
 }
 
-function PenSelector() {
-  const [showColorPicker, setShowColorPicker] = useState(false);
+function PenSelector({
+  showColorPicker,
+  setShowColorPicker,
+  closeAllDropdowns,
+}: {
+  showColorPicker: boolean;
+  setShowColorPicker: (show: boolean) => void;
+  closeAllDropdowns: () => void;
+}) {
   const { selectedTool, setSelectedTool } = useWhiteBoardStore((s) => s);
 
   return (
     <div className="relative">
       <IconPencil
         className={clsx(
-          "cursor-pointer hover:text-blue-500",
+          "cursor-pointer hover:text-blue-500 toolbar-button",
           selectedTool === "pen" && "text-blue-500"
         )}
         onClick={() => {
-          setShowColorPicker((prev) => !prev);
+          closeAllDropdowns();
+          setShowColorPicker(!showColorPicker);
           setSelectedTool("pen");
         }}
       />
@@ -288,13 +490,23 @@ function PenSelector() {
   );
 }
 
-function TextSelector() {
-  const [showTextPanel, setShowTextPanel] = useState(false);
+function TextSelector({
+  showTextPanel,
+  setShowTextPanel,
+  closeAllDropdowns,
+}: {
+  showTextPanel: boolean;
+  setShowTextPanel: (show: boolean) => void;
+  closeAllDropdowns: () => void;
+}) {
+  const { roomCode } = useRoomStore((s) => s);
+
   const {
     selectedTool,
     setSelectedTool,
     selectedObjectId,
     updateCanvasObject,
+    canvasObjects,
   } = useWhiteBoardStore((s) => s);
   const {
     lineSpacing,
@@ -308,21 +520,22 @@ function TextSelector() {
     textSize,
     textStyle,
   } = useTextStore((s) => s);
-
+  const { connect, socket } = useSocketStore();
   return (
     <div className="relative">
       <IconTextCaption
         className={clsx(
-          "cursor-pointer hover:text-blue-500",
+          "cursor-pointer hover:text-blue-500 toolbar-button",
           selectedTool === "addText" && "text-blue-500"
         )}
         onClick={() => {
+          closeAllDropdowns();
           setSelectedTool("addText");
-          setShowTextPanel((prev) => !prev);
+          setShowTextPanel(!showTextPanel);
         }}
       />
       {showTextPanel && (
-        <div className="absolute top-10 left-0 bg-white shadow-md rounded-lg p-3 flex gap-3">
+        <div className="toolbar-dropdown absolute top-10 left-0 bg-white shadow-xl rounded-xl border-2 border-orange-200 p-4 flex gap-3 z-50">
           <div className="flex flex-col gap-2 w-60">
             <div className="flex items-center justify-between gap-2">
               <label className="text-sm text-gray-600">Text size:</label>
@@ -331,11 +544,20 @@ function TextSelector() {
                 min={1}
                 max={100}
                 defaultValue={textSize}
-                onChange={(e) => {
+                onChange={async (e) => {
                   setTextSize(parseInt(e.target.value));
                   updateCanvasObject(selectedObjectId, {
                     fontSize: parseInt(e.target.value),
                   });
+                  if (roomCode && selectedObjectId) {
+                    const socket = await connect();
+                    socket.emit("update-canvas-object", {
+                      room: roomCode,
+                      object: canvasObjects.find(
+                        (obj) => obj.id === selectedObjectId
+                      ),
+                    });
+                  }
                 }}
                 className="accent-blue-500 w-43"
               />
@@ -348,11 +570,20 @@ function TextSelector() {
                 min={0}
                 max={5}
                 defaultValue={lineSpacing}
-                onChange={(e) => {
+                onChange={async (e) => {
                   setLineSpacing(parseInt(e.target.value));
                   updateCanvasObject(selectedObjectId, {
                     lineHeight: parseInt(e.target.value),
                   });
+                  if (roomCode && selectedObjectId) {
+                    const socket = await connect();
+                    socket.emit("update-canvas-object", {
+                      room: roomCode,
+                      object: canvasObjects.find(
+                        (obj) => obj.id === selectedObjectId
+                      ),
+                    });
+                  }
                 }}
                 className="accent-blue-500 w-43"
               />
@@ -363,11 +594,20 @@ function TextSelector() {
               <input
                 type="text"
                 value={textColor}
-                onChange={(e) => {
+                onChange={async (e) => {
                   setTextColor(e.target.value);
                   updateCanvasObject(selectedObjectId, {
                     fill: e.target.value,
                   });
+                  if (roomCode && selectedObjectId) {
+                    const socket = await connect();
+                    socket.emit("update-canvas-object", {
+                      room: roomCode,
+                      object: canvasObjects.find(
+                        (obj) => obj.id === selectedObjectId
+                      ),
+                    });
+                  }
                 }}
                 className="border rounded px-2 py-1 text-sm w-37"
               />
@@ -377,23 +617,50 @@ function TextSelector() {
               <p className="text-sm text-gray-600 pb-2">Alignment:</p>
               <div className="flex items-center justify-between gap-2 px-10">
                 <IconAlignLeft
-                  onClick={() => {
+                  onClick={async () => {
                     setTextAlignment("left");
                     updateCanvasObject(selectedObjectId, { align: "left" });
+                    if (roomCode && selectedObjectId) {
+                      const socket = await connect();
+                      socket.emit("update-canvas-object", {
+                        room: roomCode,
+                        object: canvasObjects.find(
+                          (obj) => obj.id === selectedObjectId
+                        ),
+                      });
+                    }
                   }}
                 />
                 <span className="h-full w-[1px]"></span>
                 <IconAlignLeft
-                  onClick={() => {
+                  onClick={async () => {
                     setTextAlignment("center");
                     updateCanvasObject(selectedObjectId, { align: "center" });
+                    if (selectedObjectId && roomCode) {
+                      const socket = await connect();
+                      socket.emit("update-canvas-object", {
+                        room: roomCode,
+                        object: canvasObjects.find(
+                          (obj) => obj.id === selectedObjectId
+                        ),
+                      });
+                    }
                   }}
                 />
                 <span className="h-full w-[1px]"></span>
                 <IconAlignLeft
-                  onClick={() => {
+                  onClick={async () => {
                     setTextAlignment("right");
                     updateCanvasObject(selectedObjectId, { align: "right" });
+                    if (selectedObjectId && roomCode) {
+                      const socket = await connect();
+                      socket.emit("update-canvas-object", {
+                        room: roomCode,
+                        object: canvasObjects.find(
+                          (obj) => obj.id === selectedObjectId
+                        ),
+                      });
+                    }
                   }}
                 />
               </div>
