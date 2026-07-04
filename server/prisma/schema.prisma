@@ -105,8 +105,8 @@ model RoomParticipant {
   joinedAt DateTime @default(now())
   room     Rooms    @relation(fields: [roomId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
-  @@unique([roomId, userId])
 
+  @@unique([roomId, userId])
 }
 
 model CanvasObject {
