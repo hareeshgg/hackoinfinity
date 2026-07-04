@@ -1,0 +1,14 @@
+{
+  "name": "hackoinfinity",
+  "private": true,
+  "workspaces": [
+    "server",
+    "whiteboard"
+  ],
+  "scripts": {
+    "build:server": "npm run build --workspace=server",
+    "build:whiteboard": "npm run build --workspace=whiteboard",
+    "start:server": "npm run start --workspace=server",
+    "start:whiteboard": "npm run start --workspace=whiteboard"
+  }
+}
