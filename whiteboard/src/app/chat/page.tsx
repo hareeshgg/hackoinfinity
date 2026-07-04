@@ -24,14 +24,25 @@ interface User {
 }
 
 interface CollaborativeChatBoxProps {
-  drawingId?: number;
-  chatRoomId?: string;
+  searchParams: Promise<{ drawingId?: string; chatRoomId?: string }>;
 }
 
 export default function CollaborativeChatBox({
-  drawingId,
-  chatRoomId: initialChatRoomId,
+  searchParams,
 }: CollaborativeChatBoxProps) {
+  const [pageParams, setPageParams] = useState<{ drawingId?: number; chatRoomId?: string }>({});
+
+  useEffect(() => {
+    searchParams.then((sp) => {
+      setPageParams({
+        drawingId: sp.drawingId ? Number(sp.drawingId) : undefined,
+        chatRoomId: sp.chatRoomId,
+      });
+    });
+  }, [searchParams]);
+
+  const drawingId = pageParams.drawingId;
+  const initialChatRoomId = pageParams.chatRoomId;
   const { data: session } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);

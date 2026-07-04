@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma"; // your Prisma client
 
 export async function GET(
   request: Request,
-  { params }: { params: { roomCode: string } },
+  { params }: { params: Promise<{ roomCode: string }> },
 ) {
   try {
+    const { roomCode } = await params;
     const roomWithUsers = await prisma.rooms.findUnique({
-      where: { roomCode: params.roomCode.toUpperCase() },
+      where: { roomCode: roomCode.toUpperCase() },
       include: {
         participants: {
           include: {

@@ -5,9 +5,10 @@ import { authOptions } from "@/lib/auth";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { roomCode: string } },
+  { params }: { params: Promise<{ roomCode: string }> },
 ) {
   try {
+    const { roomCode } = await params;
     // Check authentication
     const session = await getServerSession(authOptions);
 
@@ -15,7 +16,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!params.roomCode) {
+    if (!roomCode) {
       return NextResponse.json(
         { error: "Room code is required" },
         { status: 400 },
@@ -33,7 +34,7 @@ export async function GET(
 
     // Find the room
     const room = await prisma.rooms.findFirst({
-      where: { roomCode: params.roomCode.toUpperCase() },
+      where: { roomCode: roomCode.toUpperCase() },
     });
 
     if (!room) {
