@@ -18,7 +18,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         return resolve(existing);
       }
 
-      const socket = io("http://localhost:8000", {
+      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:8000", {
         transports: ["websocket", "polling"],
         reconnection: true,
         reconnectionAttempts: 5,
